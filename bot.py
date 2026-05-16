@@ -11,7 +11,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # ================= Config =================
 SENDER_EMAIL = "liniji85@gmail.com"
-# 💡 기존에 세팅해두신 깃허브 시크릿(SENDER_PASSWORD)을 그대로 호출합니다.
+# 💡 깃허브 시크릿(SENDER_PASSWORD)을 그대로 호출합니다.
 SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
 
 # 💡 두 명의 수신자 주소 리스트
@@ -41,12 +41,11 @@ def analyze_single_stock(row_data):
         suffix = ".KS" if market == "KOSPI" else ".KQ"
         ticker = code + suffix
         
-        df = yf.download(ticker, period="2y", progress=False, threads=False, group_by='ticker')
+        # 💡 각 프로세스마다 캐시 충돌을 완전히 막기 위해 yfinance 인스턴스를 독립 생성하고 캐시 비활성화
+        ticker_obj = yf.Ticker(ticker)
+        df = ticker_obj.history(period="2y", proxy=None)
         
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [col for col in df.columns]
-            
-        if len(df) < 240:
+        if df.empty or len(df) < 240:
             return None
             
         df["MA5"] = df["Close"].rolling(5).mean()
@@ -88,7 +87,7 @@ def find_turning_stocks_multiprocess():
     stock_tasks = [(row['Code'], row['Name'], row['Market']) for _, row in df_krx.iterrows()]
     total_count = len(stock_tasks)
     
-    # 깃허브 액션 가상 서버 사양에 맞추어 core 배분을 4개로 최적화합니다.
+    # 깃허브 액션 서버 환경에 맞춰 안정적으로 4개의 코어 사용
     with ProcessPoolExecutor(max_workers=4) as executor:
         future_to_stock = {executor.submit(analyze_single_stock, task): task for task in stock_tasks}
         
@@ -136,5 +135,11 @@ def send_email(df_result):
     print("❌ 최종 이메일 발송 실패")
 
 if __name__ == "__main__":
+    # 💡 멀티프로세싱 시 캐시 데이터베이스 파일이 엉켜 에러나는 문제를 원천 차단하는 핵심 설정
+    try:
+        yf.set_tz_cache_location(None)
+    except:
+        pass
+
     df = find_turning_stocks_multiprocess()
     send_email(df)
