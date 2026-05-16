@@ -24,6 +24,7 @@ except:
 
 def get_upbit_krw_markets():
     """업비트 원화(KRW) 마켓의 모든 코인 목록 수집"""
+    # 💡 중요: 최신 업비트 정책에 맞추어 ?isDetails=false 조건을 필수 탑재하여 차단 원천 우회
     url = "https://upbit.com"
     for attempt in range(3):
         try:
@@ -156,7 +157,6 @@ def send_crypto_email(results, intervals_kor):
     print("❌ 코인 리포트 최종 발송 실패")
 
 if __name__ == "__main__":
-    # 💡 깃허브 액션 전용: 무한 루프 없이 한 번만 분석 후 종료하도록 세팅
     res, kor_names = analyze_crypto_market()
     if res:
         send_crypto_email(res, kor_names)
