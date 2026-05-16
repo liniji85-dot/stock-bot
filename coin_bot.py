@@ -1,9 +1,9 @@
 import datetime
 import smtplib
 import time
-import requests
 import pandas as pd
 import socket
+import cloudscraper  # 💡 업비트의 클라우드플레어 차단망을 뚫는 핵심 패키지
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -12,10 +12,8 @@ SENDER_EMAIL = "liniji85@gmail.com"
 SENDER_PASSWORD = "aloq mltc requ xciy"
 RECEIVER_EMAIL = "forother1@naver.com"
 
-# 차단 방지를 위한 브라우저 가짜 헤더 설정
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-}
+# 일반 requests 대신 브라우저의 보안 통신을 완벽하게 구현하는 크롤러 생성
+scraper = cloudscraper.create_scraper()
 
 try:
     GMAIL_SMTP_IP = socket.gethostbyname("://gmail.com")
@@ -23,12 +21,12 @@ except:
     GMAIL_SMTP_IP = "142.250.31.108"
 
 def get_upbit_krw_markets():
-    """업비트 원화(KRW) 마켓의 모든 코인 목록 수집"""
-    # 💡 중요: 최신 업비트 정책에 맞추어 ?isDetails=false 조건을 필수 탑재하여 차단 원천 우회
+    """업비트 원화(KRW) 마켓의 모든 코인 목록 수집 (차단 전면 우회)"""
     url = "https://upbit.com"
     for attempt in range(3):
         try:
-            response = requests.get(url, headers=HEADERS, timeout=10)
+            # scraper.get을 사용하여 일반 브라우저인 것처럼 보안망 통과
+            response = scraper.get(url, timeout=10)
             if response.status_code == 200:
                 krw_markets = [coin for coin in response.json() if coin['market'].startswith('KRW-')]
                 return krw_markets
@@ -39,7 +37,7 @@ def get_upbit_krw_markets():
     return []
 
 def get_ohlcv(market, interval, count=250):
-    """업비트에서 특정 주기의 캔들 데이터 조회"""
+    """업비트에서 특정 주기의 캔들 데이터 조회 (차단 전면 우회)"""
     if interval == '5m': url = f"https://upbit.com{market}&count={count}"
     elif interval == '15m': url = f"https://upbit.com{market}&count={count}"
     elif interval == '1h': url = f"https://upbit.com{market}&count={count}"
@@ -48,7 +46,7 @@ def get_ohlcv(market, interval, count=250):
     else: return pd.DataFrame()
 
     try:
-        response = requests.get(url, headers=HEADERS, timeout=5)
+        response = scraper.get(url, timeout=5)
         if response.status_code != 200:
             return pd.DataFrame()
         
@@ -104,7 +102,6 @@ def analyze_crypto_market():
             df = get_ohlcv(market, interval)
             if check_240_breakout(df):
                 current_price = df.iloc[-1]['Close']
-                # 리스트 형태로 된 코드를 문자열로 안전하게 변환 (예: KRW-BTC -> BTC)
                 coin_symbol = market.split('-')[1] if '-' in market else market
                 results[interval].append({
                     "Name": name,
