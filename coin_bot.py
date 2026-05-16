@@ -3,7 +3,7 @@ import smtplib
 import time
 import pandas as pd
 import socket
-import pyupbit  # 💡 업비트 공식 파이썬 라이브러리 탑재
+import pyupbit  # 업비트 공식 라이브러리
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -40,33 +40,34 @@ def check_240_breakout(df):
 def analyze_crypto_market():
     print("🪙 업비트 전 종목 멀티 타임프레임 분석 시작...")
     
-    # 💡 pyupbit 라이브러리로 원화 마켓 코인 목록 정식 수집 (차단 절대 없음)
     try:
-        coins = pyupbit.get_tickers(fiat="KRW")
+        # 업비트 전 종목 수집 (원화/BTC/USDT 포함 전체 마켓)
+        coins = pyupbit.get_tickers()
         print(f"📊 분석 대상 코인 수: {len(coins)}개")
     except Exception as e:
         print(f"❌ 코인 목록 조회 실패: {e}")
         return {}, {}
         
-    intervals = ['minute5', 'minute15', 'minute60', 'minute240', 'day']
-    intervals_kor = {'minute5': '5분봉', 'minute15': '15분봉', 'minute60': '1시간봉', 'minute240': '4시간봉', 'day': '일봉'}
+    # 💡 [요청사항 반영] 5분/15분봉 전면 제거 ➡️ 30분봉, 1시간봉, 일봉으로 전면 재배치!
+    intervals = ['minute30', 'minute60', 'day']
+    intervals_kor = {'minute30': '30분봉', 'minute60': '1시간봉', 'day': '일봉'}
     
     results = {k: [] for k in intervals}
     
     for idx, market in enumerate(coins):
-        # API 초당 호출 제한 방지
-        time.sleep(0.05)
+        # 50개 종목 분석할 때마다 터미널에 진행 상황 실시간 출력 (깃허브 모니터링용)
+        if idx % 50 == 0 and idx > 0:
+            print(f"> 진행 상황: {idx}/{len(coins)}개 코인 분석 완료...")
+            
+        time.sleep(0.02)  # 초고속 API 동기화 세팅
         
         for interval in intervals:
             try:
-                # 💡 pyupbit 정식 함수로 차트 데이터 수집
                 df = pyupbit.get_ohlcv(market, interval=interval, count=250)
                 if check_240_breakout(df):
                     current_price = df.iloc[-1]['close']
-                    coin_symbol = market.split('-')[1] if '-' in market else market
                     results[interval].append({
-                        "Name": coin_symbol, # pyupbit는 기호로 처리하므로 심볼 매칭
-                        "Code": coin_symbol,
+                        "Name": market,  # 마켓 기호 결합 (예: KRW-BTC, BTC-XRP)
                         "Price": current_price
                     })
             except:
@@ -82,10 +83,10 @@ def send_crypto_email(results, intervals_kor):
     msg["From"] = SENDER_EMAIL
     msg["To"] = RECEIVER_EMAIL
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-    msg["Subject"] = f"[🪙코인 실전] {now_str} 주기별 240선 돌파 리포트"
+    msg["Subject"] = f"[🪙코인 정각타점] {now_str} 주기별 240선 돌파 리포트"
     
-    html = f"<h2>🪙 업비트 240선 골든크로스 / 바로 위 안착 리포트</h2>"
-    html += f"<p>조회 시간: {now_str} (1시간마다 자동 갱신)</p><hr>"
+    html = f"<h2>🪙 업비트 1시간 주기 자동화 리포트</h2>"
+    html += f"<p>조회 시간: {now_str} (컴퓨터를 꺼두셔도 깃허브가 1시간마다 발송)</p><hr>"
     
     for interval, kor_name in intervals_kor.items():
         coin_list = results[interval]
@@ -94,11 +95,11 @@ def send_crypto_email(results, intervals_kor):
         if not coin_list:
             html += "<p style='color: gray;'>조건을 만족하는 코인이 없습니다.</p>"
         else:
-            html += "<table border=1 style='border-collapse: collapse; text-align: center; width: 400px Gaza;'>"
-            html += "<tr style='background-color: #f2f2f2;'><th>코인 심볼</th><th>현재가</th></tr>"
+            html += "<table border=1 style='border-collapse: collapse; text-align: center; width: 450px;'>"
+            html += "<tr style='background-color: #f2f2f2;'><th>마켓 및 코인 심볼</th><th>현재가 / 종가</th></tr>"
             for c in coin_list:
-                price_format = f"{c['Price']:,}원" if c['Price'] >= 1 else f"{c['Price']:.4f}원"
-                html += f"<tr><td style='padding: 6px; font-weight: bold;'>{c['Name']}</td><td>{price_format}</td></tr>"
+                price_format = f"{c['Price']:,}원" if c['Price'] >= 1 else f"{c['Price']:.8f}원"
+                html += f"<tr><td style='padding: 6px; font-weight: bold; color: #1e3a8a;'>{c['Name']}</td><td>{price_format}</td></tr>"
             html += "</table>"
         html += "<br>"
         
@@ -109,7 +110,7 @@ def send_crypto_email(results, intervals_kor):
             with smtplib.SMTP_SSL(GMAIL_SMTP_IP, 465, timeout=15) as server:
                 server.login(SENDER_EMAIL, SENDER_PASSWORD)
                 server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-            print(f"✅ [{now_str}] 코인 리포트 이메일 발송 완료!")
+            print(f"✅ [{now_str}] 1시간 주기가 완료되어 리포트 발송 성공!")
             return
         except Exception as e:
             print(f"⚠️ 이메일 발송 {attempt+1}회 실패, 5초 후 재시도... ({e})")
