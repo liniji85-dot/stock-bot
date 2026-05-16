@@ -11,14 +11,15 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # ================= Config =================
 SENDER_EMAIL = "liniji85@gmail.com"
-# 💡 깃허브 시크릿(SENDER_PASSWORD)을 그대로 호출합니다.
 SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
 
-# 💡 두 명의 수신자 주소 리스트
 RECEIVER_EMAIL_LIST = [
     "forother1@naver.com",
     "zldzhd052@naver.com"
 ]
+
+# 💡 [네트워크 에러 방지] 깃허브 서버에서 DNS를 못 찾을 때를 대비해 구글 SMTP 고정 IP 직접 지정
+GMAIL_SMTP_SERVER = "142.250.31.108" 
 
 def get_krx_stocks():
     print("국내 시장 전체 종목 리스트 불러오는 중...")
@@ -35,13 +36,13 @@ def get_krx_stocks():
     return df_total
 
 def analyze_single_stock(row_data):
-    """한 종목을 분석하는 독립된 함수 (멀티프로세싱에서 개별 호출됨)"""
+    """한 종목을 분석하는 독립된 함수"""
     code, name, market = row_data
     try:
         suffix = ".KS" if market == "KOSPI" else ".KQ"
         ticker = code + suffix
         
-        # 💡 각 프로세스마다 캐시 충돌을 완전히 막기 위해 yfinance 인스턴스를 독립 생성하고 캐시 비활성화
+        # 💡 캐시 충돌 방지용 history() 호출
         ticker_obj = yf.Ticker(ticker)
         df = ticker_obj.history(period="2y", proxy=None)
         
@@ -87,7 +88,6 @@ def find_turning_stocks_multiprocess():
     stock_tasks = [(row['Code'], row['Name'], row['Market']) for _, row in df_krx.iterrows()]
     total_count = len(stock_tasks)
     
-    # 깃허브 액션 서버 환경에 맞춰 안정적으로 4개의 코어 사용
     with ProcessPoolExecutor(max_workers=4) as executor:
         future_to_stock = {executor.submit(analyze_single_stock, task): task for task in stock_tasks}
         
@@ -112,7 +112,7 @@ def send_email(df_result):
     msg["Subject"] = f"[💡실전 매매] {datetime.date.today()} 전종목 240일선 리포트"
     
     if df_result.empty:
-        html = "<h3>오늘 조건에 맞는 종목이 전 시장에 없습니다.</h3>"
+        html = f"<h3>{datetime.date.today()} 오늘 조건에 맞는 종목이 전 시장에 없습니다.</h3><p>(※ 주말이거나 장 시작 전인 경우 데이터가 집계되지 않아 0개로 나올 수 있습니다.)</p>"
     else:
         html = f"<h3>📊 조건 통과 종목 ({len(df_result)}개)</h3><table border=1 style='border-collapse: collapse; text-align: center;'>"
         html += "<tr style='background-color: #f2f2f2;'><th>시장</th><th>코드</th><th>종목명</th><th>종가</th><th>거래량</th></tr>"
@@ -124,18 +124,18 @@ def send_email(df_result):
     
     for attempt in range(3):
         try:
-            with smtplib.SMTP_SSL("://gmail.com", 465) as server:
+            # 💡 ://gmail.com 도메인 대신 구글 정식 이메일 고정 IP 주소로 통신 접속
+            with smtplib.SMTP_SSL(GMAIL_SMTP_SERVER, 465, timeout=15) as server:
                 server.login(SENDER_EMAIL, SENDER_PASSWORD)
                 server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL_LIST, msg.as_string())
             print(f"✅ 이메일 발송 완료! ({', '.join(RECEIVER_EMAIL_LIST)})")
             return
         except Exception as e:
             print(f"⚠️ 이메일 발송 시도 {attempt+1}회 실패: {e}")
-            time.sleep(3)
+            time.sleep(5)
     print("❌ 최종 이메일 발송 실패")
 
 if __name__ == "__main__":
-    # 💡 멀티프로세싱 시 캐시 데이터베이스 파일이 엉켜 에러나는 문제를 원천 차단하는 핵심 설정
     try:
         yf.set_tz_cache_location(None)
     except:
