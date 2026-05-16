@@ -1,0 +1,27 @@
+name: Daily Stock Bot
+
+on:
+  schedule:
+    # 매일 한국 시간 오후 4시 5분(서버 기준 UTC 오전 7시 5분)에 자동 실행
+    - cron: '5 7 * * *'
+  workflow_dispatch: # 버튼을 눌러 수동으로도 실행 가능하게 설정
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yfinance pandas finance-datareader
+
+    - name: Run Stock Bot
+      run: python bot.py
