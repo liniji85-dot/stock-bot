@@ -17,24 +17,29 @@ RECEIVER_EMAIL_LIST = [
     "zldzhd052@naver.com"
 ]
 
-# 💡 안전한 구글 SMTP 도메인 설정 (기존 try-except 대체)
-GMAIL_SMTP_IP = "smtp.gmail.com"
+# 💡 안전한 구글 SMTP 도메인 설정
+GMAIL_SMTP_IP = "://gmail.com"
 
 def check_240_breakout(df):
-    """240선 바로 위로 돌파했는지 조건 검증"""
+    """30분봉, 1시간봉, 일봉 모두에 적용되는 실시간 240선 터치 및 돌파 초입 검증"""
     if df.empty or len(df) < 240:
         return False
     
+    # 240 이평선 계산
     df['MA240'] = df['close'].rolling(240).mean()
     
     today = df.iloc[-1]
-    yesterday = df.iloc[-2]
     
-    cond_breakout = (yesterday['close'] < yesterday['MA240']) and (today['close'] >= today['MA240'])
-    cond_near_above = (today['close'] >= today['MA240']) and (today['close'] <= today['MA240'] * 1.03)
+    # 💡 [모든 주기 공통 적용] 현재 진행 중인 봉의 실시간 타점 검증
+    # 1. 현재 봉의 저가와 고가 사이에 240선이 위치함 (실시간 터치 또는 관통)
+    # 2. 현재 가격이 240선 위 +1.5% 이내의 아주 가까운 매수 사정권 영역에 머무름
+    cond_touch = (today['low'] <= today['MA240']) and (today['high'] >= today['MA240'])
+    cond_near_above = (today['close'] >= today['MA240']) and (today['close'] <= today['MA240'] * 1.015)
+    
+    # 당일/당해 봉 양봉 유지 (매수세 유입 확인)
     cond_bullish = today['close'] >= today['open']
     
-    if (cond_breakout or cond_near_above) and cond_bullish:
+    if (cond_touch or cond_near_above) and cond_bullish:
         return True
     return False
 
@@ -49,6 +54,7 @@ def analyze_crypto_market():
         print(f"❌ 코인 목록 조회 실패: {e}")
         return {}, {}
         
+    # 💡 30분봉, 1시간봉, 일봉(day) 순서대로 모두 분석합니다.
     intervals = ['minute30', 'minute60', 'day']
     intervals_kor = {'minute30': '30분봉', 'minute60': '1시간봉', 'day': '일봉'}
     
@@ -65,6 +71,7 @@ def analyze_crypto_market():
                 df = pyupbit.get_ohlcv(market, interval=interval, count=250)
                 if check_240_breakout(df):
                     current_price = df.iloc[-1]['close']
+                    # 표에 심볼이 깔끔하게 나오도록 가공 (예: KRW-BTC -> BTC)
                     coin_symbol = market.split('-')[1] if '-' in market else market
                     results[interval].append({
                         "Name": coin_symbol,
@@ -86,8 +93,8 @@ def send_crypto_email(results, intervals_kor):
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
     msg["Subject"] = f"[🪙코인 정각타점] {now_str} 주기별 240선 돌파 리포트"
     
-    html = f"<h2>🪙 업비트 1시간 주기 원화 마켓 리포트</h2>"
-    html += f"<p>조회 시간: {now_str} (컴퓨터를 꺼두셔도 깃허브가 1시간마다 발송)</p><hr>"
+    html = f"<h2>🪙 업비트 원화 마켓 주기별 리포트</h2>"
+    html += f"<p>조회 시간: {now_str} (컴퓨터를 꺼두셔도 깃허브가 정기적으로 발송)</p><hr>"
     
     for interval, kor_name in intervals_kor.items():
         coin_list = results[interval]
