@@ -1,0 +1,135 @@
+import datetime
+import smtplib
+import time
+import requests
+import pandas as pd
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+# ================= Config =================
+SENDER_EMAIL = "liniji85@gmail.com"
+SENDER_PASSWORD = "aloq mltc requ xciy"
+RECEIVER_EMAIL = "forother1@naver.com"
+
+def get_upbit_krw_markets():
+    """업비트 원화(KRW) 마켓의 모든 코인 목록 수집"""
+    url = "https://upbit.com"
+    try:
+        response = requests.get(url).json()
+        krw_markets = [coin for coin in response if coin['market'].startswith('KRW-')]
+        return krw_markets
+    except Exception as e:
+        print(f"❌ 코인 목록 조회 실패: {e}")
+        return []
+
+def get_ohlcv(market, interval, count=250):
+    """업비트에서 특정 주기의 캔들 데이터 조회"""
+    if interval == '5m': url = f"https://upbit.com{market}&count={count}"
+    elif interval == '15m': url = f"https://upbit.com{market}&count={count}"
+    elif interval == '1h': url = f"https://upbit.com{market}&count={count}"
+    elif interval == '4h': url = f"https://upbit.com{market}&count={count}"
+    elif interval == '1d': url = f"https://upbit.com{market}&count={count}"
+    else: return pd.DataFrame()
+
+    try:
+        response = requests.get(url).json()
+        if not isinstance(response, list) or len(response) < 240:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(response)
+        df = df.iloc[::-1].reset_index(drop=True)
+        df = df[['trade_price', 'opening_price', 'candle_acc_trade_volume']]
+        df.columns = ['Close', 'Open', 'Volume']
+        return df
+    except:
+        return pd.DataFrame()
+
+def check_240_breakout(df):
+    """240선 바로 위로 돌파했는지 조건 검증"""
+    if df.empty or len(df) < 240:
+        return False
+    
+    df['MA240'] = df['Close'].rolling(240).mean()
+    
+    today = df.iloc[-1]
+    yesterday = df.iloc[-2]
+    
+    # 조건: 어제 종가는 240선 아래였고, 현재 종가는 240선 돌파 혹은 바로 위 (+3% 이내)
+    cond_breakout = (yesterday['Close'] < yesterday['MA240']) and (today['Close'] >= today['MA240'])
+    cond_near_above = (today['Close'] >= today['MA240']) and (today['Close'] <= today['MA240'] * 1.03)
+    cond_bullish = today['Close'] >= today['Open']
+    
+    if (cond_breakout or cond_near_above) and cond_bullish:
+        return True
+    return False
+
+def analyze_crypto_market():
+    print("🪙 업비트 전 종목 멀티 타임프레임 분석 시작...")
+    coins = get_upbit_krw_markets()
+    intervals = ['5m', '15m', '1h', '4h', '1d']
+    intervals_kor = {'5m': '5분봉', '15m': '15분봉', '1h': '1시간봉', '4h': '4시간봉', '1d': '일봉'}
+    
+    results = {k: [] for k in intervals}
+    
+    for idx, coin in enumerate(coins):
+        market = coin['market']
+        name = coin['korean_name']
+        
+        time.sleep(0.05)  # 속도 최적화 (업비트 초당 제한 방지)
+        
+        for interval in intervals:
+            df = get_ohlcv(market, interval)
+            if check_240_breakout(df):
+                current_price = df.iloc[-1]['Close']
+                results[interval].append({
+                    "Name": name,
+                    "Code": market.split('-')[1],
+                    "Price": current_price
+                })
+                
+    return results, intervals_kor
+
+def send_crypto_email(results, intervals_kor):
+    msg = MIMEMultipart()
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = RECEIVER_EMAIL
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    msg["Subject"] = f"[🪙코인 실전] {now_str} 주기별 240선 돌파 리포트"
+    
+    html = f"<h2>🪙 업비트 240선 골든크로스 / 바로 위 안착 리포트</h2>"
+    html += f"<p>조회 시간: {now_str} (1시간마다 자동 갱신)</p><hr>"
+    
+    for interval, kor_name in intervals_kor.items():
+        coin_list = results[interval]
+        html += f"<h3>📊 {kor_name} 조건 만족 종목 ({len(coin_list)}개)</h3>"
+        
+        if not coin_list:
+            html += "<p style='color: gray;'>조건을 만족하는 코인이 없습니다.</p>"
+        else:
+            html += "<table border=1 style='border-collapse: collapse; text-align: center; width: 400px;'>"
+            html += "<tr style='background-color: #f2f2f2;'><th>코인명</th><th>심볼</th><th>현재가</th></tr>"
+            for c in coin_list:
+                price_format = f"{c['Price']:,}원" if c['Price'] >= 1 else f"{c['Price']:.4f}원"
+                html += f"<tr><td style='padding: 6px;'>{c['Name']}</td><td>{c['Code']}</td><td>{price_format}</td></tr>"
+            html += "</table>"
+        html += "<br>"
+        
+    msg.attach(MIMEText(html, "html"))
+    
+    try:
+        with smtplib.SMTP_SSL("://gmail.com", 465) as server:
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+        print(f"✅ [{now_str}] 코인 리포트 이메일 발송 완료!")
+    except Exception as e:
+        print(f"❌ 이메일 발송 실패: {e}")
+
+if __name__ == "__main__":
+    print("🚀 코인 1시간 무한 반복 봇 가동 시작...")
+    while True:
+        res, kor_names = analyze_crypto_market()
+        send_crypto_email(res, kor_names)
+        
+        print("⏰ 1시간 동안 대기합니다... (이 창을 끄지 마세요)")
+        # 1시간 = 3600초 대기 후 다시 작동
+        time.sleep(3600)

@@ -1,5 +1,6 @@
 import datetime
 import smtplib
+import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import yfinance as yf
@@ -112,13 +113,19 @@ def send_email(df_result):
         html += "</table>"
     
     msg.attach(MIMEText(html, "html"))
-    try:
-        with smtplib.SMTP_SSL("://gmail.com", 465) as server:
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-        print("✅ 이메일 발송 완료!")
-    except Exception as e:
-        print(f"❌ 이메일 발송 실패: {e}")
+    
+    # 일시적인 네트워크 먹통 현상 방지를 위해 최대 3번까지 재발송 시도
+    for attempt in range(3):
+        try:
+            with smtplib.SMTP_SSL("://gmail.com", 465) as server:
+                server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+            print("✅ 이메일 발송 완료!")
+            return
+        except Exception as e:
+            print(f"⚠️ 이메일 발송 시도 {attempt+1}회 실패: {e}")
+            time.sleep(3)  # 3초 대기 후 재시도
+    print("❌ 최종 이메일 발송 실패")
 
 if __name__ == "__main__":
     df = find_turning_stocks()
