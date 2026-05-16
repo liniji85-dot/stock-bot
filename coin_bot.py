@@ -10,12 +10,15 @@ from email.mime.text import MIMEText
 # ================= Config =================
 SENDER_EMAIL = "liniji85@gmail.com"
 SENDER_PASSWORD = "aloq mltc requ xciy"
-RECEIVER_EMAIL = "forother1@naver.com"
 
-try:
-    GMAIL_SMTP_IP = socket.gethostbyname("://gmail.com")
-except:
-    GMAIL_SMTP_IP = "142.250.31.108"
+# 💡 두 명의 수신자 리스트
+RECEIVER_EMAIL_LIST = [
+    "forother1@naver.com",
+    "zldzhd052@naver.com"
+]
+
+# 💡 안전한 구글 SMTP 도메인 설정 (기존 try-except 대체)
+GMAIL_SMTP_IP = "smtp.gmail.com"
 
 def check_240_breakout(df):
     """240선 바로 위로 돌파했는지 조건 검증"""
@@ -39,10 +42,9 @@ def analyze_crypto_market():
     print("🪙 업비트 원화 마켓 멀티 타임프레임 분석 시작...")
     
     try:
-        # 💡 [핵심 변경] 전체 목록을 가져온 뒤, 오직 원화(KRW)로 바로 거래 가능한 알짜 코인만 강력 필터링!
         raw_coins = pyupbit.get_tickers()
         coins = [c for c in raw_coins if c.startswith('KRW-')]
-        print(f"📊 분석 대상 원화 코인 수: {len(coins)}개 (과부하 랙 원천 차단)")
+        print(f"📊 분석 대상 원화 코인 수: {len(coins)}개")
     except Exception as e:
         print(f"❌ 코인 목록 조회 실패: {e}")
         return {}, {}
@@ -56,14 +58,13 @@ def analyze_crypto_market():
         if idx % 30 == 0 and idx > 0:
             print(f"> 진행 상황: {idx}/{len(coins)}개 원화 코인 분석 완료...")
             
-        time.sleep(0.05)  # 안정적인 통신을 위한 시간 간격
+        time.sleep(0.05)
         
         for interval in intervals:
             try:
                 df = pyupbit.get_ohlcv(market, interval=interval, count=250)
                 if check_240_breakout(df):
                     current_price = df.iloc[-1]['close']
-                    # 표에 심볼이 깔끔하게 나오도록 가공 (예: KRW-BTC -> BTC)
                     coin_symbol = market.split('-')[1] if '-' in market else market
                     results[interval].append({
                         "Name": coin_symbol,
@@ -80,7 +81,8 @@ def send_crypto_email(results, intervals_kor):
         
     msg = MIMEMultipart()
     msg["From"] = SENDER_EMAIL
-    msg["To"] = RECEIVER_EMAIL
+    msg["To"] = ", ".join(RECEIVER_EMAIL_LIST) 
+    
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
     msg["Subject"] = f"[🪙코인 정각타점] {now_str} 주기별 240선 돌파 리포트"
     
@@ -108,8 +110,8 @@ def send_crypto_email(results, intervals_kor):
         try:
             with smtplib.SMTP_SSL(GMAIL_SMTP_IP, 465, timeout=15) as server:
                 server.login(SENDER_EMAIL, SENDER_PASSWORD)
-                server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-            print(f"✅ [{now_str}] 리포트 발송 성공!")
+                server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL_LIST, msg.as_string())
+            print(f"✅ [{now_str}] 리포트 발송 성공! ({', '.join(RECEIVER_EMAIL_LIST)})")
             return
         except Exception as e:
             print(f"⚠️ 이메일 발송 {attempt+1}회 실패, 5초 후 재시도... ({e})")
