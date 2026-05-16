@@ -10,9 +10,6 @@ from email.mime.text import MIMEText
 
 # ================= Config =================
 SENDER_EMAIL = "liniji85@gmail.com"
-
-# 💡 [핵심] 깃허브 시크릿을 쓰지 않고, 여기에 구글 앱 비밀번호 16자리를 직접 따옴표 안에 입력하세요!
-# 예: SENDER_PASSWORD = "abcd efgh ijkl mnop"
 SENDER_PASSWORD = "aloq mltc requ xciy" 
 
 # 💡 두 명의 수신자 주소 리스트
@@ -75,16 +72,22 @@ def find_turning_stocks():
             today = df.iloc[-1]
             yesterday = df.iloc[-2]
             
-            # --- 조건 검증 ---
-            cond_breakout = (yesterday["Close"] < yesterday["MA240"]) and (today["Close"] >= today["MA240"])
-            cond_near = (today["Close"] >= today["MA240"] * 0.98) and (today["Close"] <= today["MA240"] * 1.03)
+            # --- 💡 [실시간 타점 조건 수정] ---
+            # 1. 당일 캔들 범위(저가~고가) 내에 240일선이 걸쳐있음 (실시간 터치/관통)
+            # 2. 현재가가 240일선 위 +1.5% 이내의 아주 가까운 초입 영역에 머무름
+            cond_touch = (today["Low"] <= today["MA240"]) and (today["High"] >= today["MA240"])
+            cond_near_above = (today["Close"] >= today["MA240"]) and (today["Close"] <= today["MA240"] * 1.015)
             
-            if not (cond_breakout or cond_near):
+            if not (cond_touch or cond_near_above):
                 continue
+                
+            # 3. 거래량 급증 (평균의 3배 이상)
             if today["Volume"] < yesterday["Vol_MA20"] * 3:
                 continue
+            # 4. 정배열 초기 (5일선 > 20일선)
             if today["MA5"] < today["MA20"]:
                 continue
+            # 5. 당일 양봉 유지 (매수세 유입 확인)
             if today["Close"] < today["Open"]:
                 continue
                 
@@ -108,7 +111,7 @@ def send_email(df_result):
     msg["Subject"] = f"[💡실전 매매] {datetime.date.today()} 전종목 240일선 리포트"
     
     if df_result.empty:
-        html = "<h3>오늘 조건에 맞는 종목이 전 시장에 없습니다.</h3>"
+        html = f"<h3>{datetime.date.today()} 오늘 조건에 맞는 종목이 전 시장에 없습니다.</h3><p>(※ 장중 또는 장 마감 직후 분석 시 가장 정확한 실시간 타점이 검출됩니다.)</p>"
     else:
         html = f"<h3>📊 조건 통과 종목 ({len(df_result)}개)</h3><table border=1 style='border-collapse: collapse; text-align: center;'>"
         html += "<tr style='background-color: #f2f2f2;'><th>시장</th><th>코드</th><th>종목명</th><th>종가</th><th>거래량</th></tr>"
