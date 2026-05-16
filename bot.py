@@ -1,4 +1,3 @@
-import os
 import datetime
 import smtplib
 import time
@@ -11,10 +10,12 @@ from email.mime.text import MIMEText
 
 # ================= Config =================
 SENDER_EMAIL = "liniji85@gmail.com"
-# 💡 기존 저장소 시크릿에서 안전하게 비밀번호를 가져옵니다.
-SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
 
-# 💡 [요청 반영] 수신자 이메일 주소를 리스트 형태로 추가했습니다.
+# 💡 [핵심] 깃허브 시크릿을 쓰지 않고, 여기에 구글 앱 비밀번호 16자리를 직접 따옴표 안에 입력하세요!
+# 예: SENDER_PASSWORD = "abcd efgh ijkl mnop"
+SENDER_PASSWORD = "aloq mltc requ xciy" 
+
+# 💡 두 명의 수신자 주소 리스트
 RECEIVER_EMAIL_LIST = [
     "forother1@naver.com",
     "zldzhd052@naver.com"
@@ -103,7 +104,6 @@ def find_turning_stocks():
 def send_email(df_result):
     msg = MIMEMultipart()
     msg["From"] = SENDER_EMAIL
-    # 💡 수신자 화면에 여러 명이 다 표기되도록 쉼표로 연결해 줍니다.
     msg["To"] = ", ".join(RECEIVER_EMAIL_LIST)
     msg["Subject"] = f"[💡실전 매매] {datetime.date.today()} 전종목 240일선 리포트"
     
@@ -122,7 +122,6 @@ def send_email(df_result):
         try:
             with smtplib.SMTP_SSL(GMAIL_SMTP_IP, 465) as server:
                 server.login(SENDER_EMAIL, SENDER_PASSWORD)
-                # 💡 sendmail 함수 내부에서 리스트 전체를 타겟으로 일괄 발송합니다.
                 server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL_LIST, msg.as_string())
             print(f"✅ 이메일 발송 완료! ({', '.join(RECEIVER_EMAIL_LIST)})")
             return
