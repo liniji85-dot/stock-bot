@@ -1,0 +1,28 @@
+name: Daily Auction Bot
+
+on:
+  schedule:
+    # 매일 한국 시간 아침 8시 5분(영국 표준시 UTC 전날 밤 11시 5분)에 자동 가동
+    - cron: '5 23 * * *'
+  workflow_dispatch: # 언제든 수동으로 돌려볼 수 있는 버튼 생성
+
+jobs:
+  run-auction-bot:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # 경매 데이터 수집 및 공시지가 조회를 위한 필수 패키지 설치
+        pip install requests pandas beautifulsoup4
+
+    - name: Run Auction Bot
+      run: python auction_bot.py
