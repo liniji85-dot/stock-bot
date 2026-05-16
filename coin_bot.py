@@ -3,7 +3,7 @@ import smtplib
 import time
 import pandas as pd
 import socket
-import cloudscraper  # 💡 업비트의 클라우드플레어 차단망을 뚫는 핵심 패키지
+import pyupbit  # 💡 업비트 공식 파이썬 라이브러리 탑재
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -12,69 +12,26 @@ SENDER_EMAIL = "liniji85@gmail.com"
 SENDER_PASSWORD = "aloq mltc requ xciy"
 RECEIVER_EMAIL = "forother1@naver.com"
 
-# 일반 requests 대신 브라우저의 보안 통신을 완벽하게 구현하는 크롤러 생성
-scraper = cloudscraper.create_scraper()
-
 try:
     GMAIL_SMTP_IP = socket.gethostbyname("://gmail.com")
 except:
     GMAIL_SMTP_IP = "142.250.31.108"
-
-def get_upbit_krw_markets():
-    """업비트 원화(KRW) 마켓의 모든 코인 목록 수집 (차단 전면 우회)"""
-    url = "https://upbit.com"
-    for attempt in range(3):
-        try:
-            # scraper.get을 사용하여 일반 브라우저인 것처럼 보안망 통과
-            response = scraper.get(url, timeout=10)
-            if response.status_code == 200:
-                krw_markets = [coin for coin in response.json() if coin['market'].startswith('KRW-')]
-                return krw_markets
-        except Exception as e:
-            print(f"⚠️ 코인 목록 수집 시도 {attempt+1}회 실패, 3초 후 재시도... ({e})")
-            time.sleep(3)
-    print("❌ 코인 목록 최종 조회 실패")
-    return []
-
-def get_ohlcv(market, interval, count=250):
-    """업비트에서 특정 주기의 캔들 데이터 조회 (차단 전면 우회)"""
-    if interval == '5m': url = f"https://upbit.com{market}&count={count}"
-    elif interval == '15m': url = f"https://upbit.com{market}&count={count}"
-    elif interval == '1h': url = f"https://upbit.com{market}&count={count}"
-    elif interval == '4h': url = f"https://upbit.com{market}&count={count}"
-    elif interval == '1d': url = f"https://upbit.com{market}&count={count}"
-    else: return pd.DataFrame()
-
-    try:
-        response = scraper.get(url, timeout=5)
-        if response.status_code != 200:
-            return pd.DataFrame()
-        
-        response_json = response.json()
-        if not isinstance(response_json, list) or len(response_json) < 240:
-            return pd.DataFrame()
-        
-        df = pd.DataFrame(response_json)
-        df = df.iloc[::-1].reset_index(drop=True)
-        df = df[['trade_price', 'opening_price', 'candle_acc_trade_volume']]
-        df.columns = ['Close', 'Open', 'Volume']
-        return df
-    except:
-        return pd.DataFrame()
 
 def check_240_breakout(df):
     """240선 바로 위로 돌파했는지 조건 검증"""
     if df.empty or len(df) < 240:
         return False
     
-    df['MA240'] = df['Close'].rolling(240).mean()
+    # 240선 이동평균선 계산
+    df['MA240'] = df['close'].rolling(240).mean()
     
     today = df.iloc[-1]
     yesterday = df.iloc[-2]
     
-    cond_breakout = (yesterday['Close'] < yesterday['MA240']) and (today['Close'] >= today['MA240'])
-    cond_near_above = (today['Close'] >= today['MA240']) and (today['Close'] <= today['MA240'] * 1.03)
-    cond_bullish = today['Close'] >= today['Open']
+    # 조건: 어제 종가는 240선 아래, 현재 종가는 240선 돌파 혹은 바로 위 (+3% 이내)
+    cond_breakout = (yesterday['close'] < yesterday['MA240']) and (today['close'] >= today['MA240'])
+    cond_near_above = (today['close'] >= today['MA240']) and (today['close'] <= today['MA240'] * 1.03)
+    cond_bullish = today['close'] >= today['open']
     
     if (cond_breakout or cond_near_above) and cond_bullish:
         return True
@@ -82,32 +39,38 @@ def check_240_breakout(df):
 
 def analyze_crypto_market():
     print("🪙 업비트 전 종목 멀티 타임프레임 분석 시작...")
-    coins = get_upbit_krw_markets()
-    if not coins:
-        print("⚠️ 수집된 코인 목록이 없어 이번 회차 분석을 건너뜁니다.")
+    
+    # 💡 pyupbit 라이브러리로 원화 마켓 코인 목록 정식 수집 (차단 절대 없음)
+    try:
+        coins = pyupbit.get_tickers(fiat="KRW")
+        print(f"📊 분석 대상 코인 수: {len(coins)}개")
+    except Exception as e:
+        print(f"❌ 코인 목록 조회 실패: {e}")
         return {}, {}
         
-    intervals = ['5m', '15m', '1h', '4h', '1d']
-    intervals_kor = {'5m': '5분봉', '15m': '15분봉', '1h': '1시간봉', '4h': '4시간봉', '1d': '일봉'}
+    intervals = ['minute5', 'minute15', 'minute60', 'minute240', 'day']
+    intervals_kor = {'minute5': '5분봉', 'minute15': '15분봉', 'minute60': '1시간봉', 'minute240': '4시간봉', 'day': '일봉'}
     
     results = {k: [] for k in intervals}
     
-    for idx, coin in enumerate(coins):
-        market = coin['market']
-        name = coin['korean_name']
-        
-        time.sleep(0.05)  # API 과부하 방지
+    for idx, market in enumerate(coins):
+        # API 초당 호출 제한 방지
+        time.sleep(0.05)
         
         for interval in intervals:
-            df = get_ohlcv(market, interval)
-            if check_240_breakout(df):
-                current_price = df.iloc[-1]['Close']
-                coin_symbol = market.split('-')[1] if '-' in market else market
-                results[interval].append({
-                    "Name": name,
-                    "Code": coin_symbol,
-                    "Price": current_price
-                })
+            try:
+                # 💡 pyupbit 정식 함수로 차트 데이터 수집
+                df = pyupbit.get_ohlcv(market, interval=interval, count=250)
+                if check_240_breakout(df):
+                    current_price = df.iloc[-1]['close']
+                    coin_symbol = market.split('-')[1] if '-' in market else market
+                    results[interval].append({
+                        "Name": coin_symbol, # pyupbit는 기호로 처리하므로 심볼 매칭
+                        "Code": coin_symbol,
+                        "Price": current_price
+                    })
+            except:
+                continue
                 
     return results, intervals_kor
 
@@ -131,11 +94,11 @@ def send_crypto_email(results, intervals_kor):
         if not coin_list:
             html += "<p style='color: gray;'>조건을 만족하는 코인이 없습니다.</p>"
         else:
-            html += "<table border=1 style='border-collapse: collapse; text-align: center; width: 400px;'>"
-            html += "<tr style='background-color: #f2f2f2;'><th>코인명</th><th>심볼</th><th>현재가</th></tr>"
+            html += "<table border=1 style='border-collapse: collapse; text-align: center; width: 400px Gaza;'>"
+            html += "<tr style='background-color: #f2f2f2;'><th>코인 심볼</th><th>현재가</th></tr>"
             for c in coin_list:
                 price_format = f"{c['Price']:,}원" if c['Price'] >= 1 else f"{c['Price']:.4f}원"
-                html += f"<tr><td style='padding: 6px;'>{c['Name']}</td><td>{c['Code']}</td><td>{price_format}</td></tr>"
+                html += f"<tr><td style='padding: 6px; font-weight: bold;'>{c['Name']}</td><td>{price_format}</td></tr>"
             html += "</table>"
         html += "<br>"
         
