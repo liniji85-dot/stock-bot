@@ -17,8 +17,8 @@ RECEIVER_EMAIL_LIST = [
     "zldzhd052@naver.com"
 ]
 
-# 💡 안전한 구글 SMTP 도메인 설정
-GMAIL_SMTP_IP = "://gmail.com"
+# 💡 [네트워크 에러 방지] 깃허브 서버의 DNS 먹통을 우회하기 위해 구글 SMTP 고정 IP 직접 지정
+GMAIL_SMTP_IP = "142.250.31.108"
 
 def check_240_breakout(df):
     """30분봉, 1시간봉, 일봉 모두에 적용되는 실시간 240선 터치 및 돌파 초입 검증"""
@@ -58,7 +58,6 @@ def analyze_crypto_market():
     results = {k: [] for k in intervals}
     
     for idx, market in enumerate(coins):
-        # 💡 로그가 출력되는 단위를 10개로 쪼개어 실시간으로 잘 굴러가는지 눈으로 확인 가능하게 변경
         if idx % 10 == 0 and idx > 0:
             print(f"> 진행 상황: {idx}/{len(coins)}개 원화 코인 데이터 수집 중...")
             
@@ -72,10 +71,9 @@ def analyze_crypto_market():
                         "Name": coin_symbol,
                         "Price": current_price
                     })
-                # 💡 [핵심 보완] 요청 건당 무조건 0.15초씩 쉬어주어 업비트 서버의 IP 차단(Rate Limit)을 완벽 차단
+                # 요청 건당 0.15초씩 쉬어주어 IP 차단 방지
                 time.sleep(0.15)
-            except Exception as e:
-                # 에러 발생 시 멈추지 않고 0.5초 쉰 뒤 다음 코인으로 패스
+            except:
                 time.sleep(0.5)
                 continue
                 
@@ -104,9 +102,6 @@ def send_crypto_email(results, intervals_kor):
         else:
             html += "<table border=1 style='border-collapse: collapse; text-align: center; width: 400px;'>"
             html += "<tr style='background-color: #f2f2f2;'><th>코인 심볼</th><th>현재가 / 종가</th></tr>"
-            for c in coin_list:
-                price_format = f"{c['Price']:,}원" if c['Price'] >= 1 else f"{c['Price']:.4f}원"
-                html += f"<tr><td style='padding: 6px; font-weight: bold; color: #1e3a8a;'>{c['Name']}</td><td>{price_format}</td></tr>"
             for c in coin_list:
                 price_format = f"{c['Price']:,}원" if c['Price'] >= 1 else f"{c['Price']:.4f}원"
                 html += f"<tr><td style='padding: 6px; font-weight: bold; color: #1e3a8a;'>{c['Name']}</td><td>{price_format}</td></tr>"
