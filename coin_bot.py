@@ -30,9 +30,7 @@ def check_240_breakout(df):
     
     today = df.iloc[-1]
     
-    # 💡 [모든 주기 공통 적용] 현재 진행 중인 봉의 실시간 타점 검증
-    # 1. 현재 봉의 저가와 고가 사이에 240선이 위치함 (실시간 터치 또는 관통)
-    # 2. 현재 가격이 240선 위 +1.5% 이내의 아주 가까운 매수 사정권 영역에 머무름
+    # [모든 주기 공통 적용] 현재 진행 중인 봉의 실시간 타점 검증
     cond_touch = (today['low'] <= today['MA240']) and (today['high'] >= today['MA240'])
     cond_near_above = (today['close'] >= today['MA240']) and (today['close'] <= today['MA240'] * 1.015)
     
@@ -54,30 +52,31 @@ def analyze_crypto_market():
         print(f"❌ 코인 목록 조회 실패: {e}")
         return {}, {}
         
-    # 💡 30분봉, 1시간봉, 일봉(day) 순서대로 모두 분석합니다.
     intervals = ['minute30', 'minute60', 'day']
     intervals_kor = {'minute30': '30분봉', 'minute60': '1시간봉', 'day': '일봉'}
     
     results = {k: [] for k in intervals}
     
     for idx, market in enumerate(coins):
-        if idx % 30 == 0 and idx > 0:
-            print(f"> 진행 상황: {idx}/{len(coins)}개 원화 코인 분석 완료...")
+        # 💡 로그가 출력되는 단위를 10개로 쪼개어 실시간으로 잘 굴러가는지 눈으로 확인 가능하게 변경
+        if idx % 10 == 0 and idx > 0:
+            print(f"> 진행 상황: {idx}/{len(coins)}개 원화 코인 데이터 수집 중...")
             
-        time.sleep(0.05)
-        
         for interval in intervals:
             try:
                 df = pyupbit.get_ohlcv(market, interval=interval, count=250)
                 if check_240_breakout(df):
                     current_price = df.iloc[-1]['close']
-                    # 표에 심볼이 깔끔하게 나오도록 가공 (예: KRW-BTC -> BTC)
                     coin_symbol = market.split('-')[1] if '-' in market else market
                     results[interval].append({
                         "Name": coin_symbol,
                         "Price": current_price
                     })
-            except:
+                # 💡 [핵심 보완] 요청 건당 무조건 0.15초씩 쉬어주어 업비트 서버의 IP 차단(Rate Limit)을 완벽 차단
+                time.sleep(0.15)
+            except Exception as e:
+                # 에러 발생 시 멈추지 않고 0.5초 쉰 뒤 다음 코인으로 패스
+                time.sleep(0.5)
                 continue
                 
     return results, intervals_kor
@@ -105,6 +104,9 @@ def send_crypto_email(results, intervals_kor):
         else:
             html += "<table border=1 style='border-collapse: collapse; text-align: center; width: 400px;'>"
             html += "<tr style='background-color: #f2f2f2;'><th>코인 심볼</th><th>현재가 / 종가</th></tr>"
+            for c in coin_list:
+                price_format = f"{c['Price']:,}원" if c['Price'] >= 1 else f"{c['Price']:.4f}원"
+                html += f"<tr><td style='padding: 6px; font-weight: bold; color: #1e3a8a;'>{c['Name']}</td><td>{price_format}</td></tr>"
             for c in coin_list:
                 price_format = f"{c['Price']:,}원" if c['Price'] >= 1 else f"{c['Price']:.4f}원"
                 html += f"<tr><td style='padding: 6px; font-weight: bold; color: #1e3a8a;'>{c['Name']}</td><td>{price_format}</td></tr>"
