@@ -16,7 +16,8 @@ RECEIVER_EMAIL_LIST = [
     "zldzhd052@naver.com"
 ]
 
-GMAIL_SMTP_HOST = "://gmail.com"
+# 💡 네트워크 에러(Name or service not known)를 원천 차단하기 위해 구글 SMTP 고정 IP를 사용합니다.
+GMAIL_SMTP_HOST = "74.125.137.108" 
 
 def get_krx_stocks():
     print("국내 시장 전체 종목 리스트 불러오는 중...")
@@ -59,7 +60,6 @@ def find_turning_stocks():
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = [col for col in df.columns]
                 
-            # --- 데이터 지표 계산 ---
             df["MA5"] = df["Close"].rolling(5).mean()
             df["MA20"] = df["Close"].rolling(20).mean()
             df["MA60"] = df["Close"].rolling(60).mean()
@@ -69,37 +69,30 @@ def find_turning_stocks():
             today = df.iloc[-1]
             yesterday = df.iloc[-2]
             
-            # ----------------------------------------------------
-            # 💡 [승률 65%를 위한 5대 핵심 필터 조건]
-            # ----------------------------------------------------
-            
-            # 조건 1. 240일 장기 이평선이 '우상향' 중일 것 (하락 추세 속 역배열 돌파 차단)
-            # 최근 5일 전의 240일선보다 오늘의 240일선이 평단가가 높아졌는지 확인
+            # 조건 1. 240일선 우상향
             if today["MA240"] <= df.iloc[-5]["MA240"]:
                 continue
                 
-            # 조건 2. 매물대 돌파 (당일 종가가 '최근 60거래일' 중 최고가 영역일 것)
-            # 최근 2달간 물린 악성 매물 벽을 오늘 대량거래로 뚫어냈다는 증거입니다.
+            # 조건 2. 최근 60거래일 매물대 돌파
             recent_60_max = df.iloc[-60:-1]["Close"].max()
             if today["Close"] < recent_60_max:
                 continue
 
-            # 조건 3. 완전 정배열 초입 (5일선 > 20일선 > 60일선)
-            # 중장기 이평선까지 완전히 정배열로 정돈되어 상승 에너지가 응축된 자리입니다.
+            # 조건 3. 완전 정배열 초입
             if not (today["MA5"] > today["MA20"] > today["MA60"]):
                 continue
 
-            # 조건 4. 240일선 근접성 (이격도 5% 이내 바짝 붙은 초입)
+            # 조건 4. 240일선 근접성
             cond_touch = (today["Low"] <= today["MA240"]) and (today["High"] >= today["MA240"])
             cond_near_above = (today["Close"] >= today["MA240"]) and (today["Close"] <= today["MA240"] * 1.05)
             if not (cond_touch or cond_near_above):
                 continue
                 
-            # 조건 5. 신뢰도 높은 돈의 유입 (당일 거래량이 20일 평균의 2배 이상)
+            # 조건 5. 거래량 2배 이상
             if today["Volume"] < yesterday["Vol_MA20"] * 2.0:
                 continue
                 
-            # 조건 6. 당일 확실한 매수세 (양봉 유지)
+            # 조건 6. 양봉 유지
             if today["Close"] < today["Open"]:
                 continue
                 
@@ -130,7 +123,6 @@ def send_email(df_result):
         """
     else:
         html = f"<h3>🔥 승률 65% 타겟 조건 통과 종목 ({len(df_result)}개)</h3>"
-        html += "<p style='color: blue;'>※ 아래 종목은 HTS에서 반드시 240일선 방향이 우상향인지 눈으로 재확인 후 진입하세요.</p>"
         html += "<table border=1 style='border-collapse: collapse; text-align: center;'>"
         html += "<tr style='background-color: #e6f2ff;'><th>시장</th><th>코드</th><th>종목명</th><th>종가</th><th>거래량</th></tr>"
         for _, r in df_result.iterrows():
@@ -141,6 +133,7 @@ def send_email(df_result):
     
     for attempt in range(3):
         try:
+            # 💡 수정된 고정 IP 주소로 완벽히 접속을 강제합니다.
             with smtplib.SMTP_SSL(GMAIL_SMTP_HOST, 465) as server:
                 server.login(SENDER_EMAIL, SENDER_PASSWORD)
                 server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL_LIST, msg.as_string())
