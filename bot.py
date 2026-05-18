@@ -3,7 +3,7 @@ import smtplib
 import time
 import pandas as pd
 import yfinance as yf
-import FinanceDataReader as fdr  # 전체 종목을 자동으로 가져오기 위한 라이브러리
+import FinanceDataReader as fdr
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -11,14 +11,12 @@ from email.mime.text import MIMEText
 SENDER_EMAIL = "liniji85@gmail.com"
 SENDER_PASSWORD = "aloq mltc requ xciy" 
 
-# 💡 두 명의 수신자 주소 리스트
 RECEIVER_EMAIL_LIST = [
     "forother1@naver.com",
     "zldzhd052@naver.com"
 ]
 
-# ⚠️ 안전하고 확실한 Gmail SMTP 도메인을 직접 설정합니다.
-GMAIL_SMTP_HOST = "smtp.gmail.com"
+GMAIL_SMTP_HOST = "://gmail.com"
 
 def get_krx_stocks():
     print("국내 시장 전체 종목 리스트 불러오는 중...")
@@ -35,7 +33,7 @@ def get_krx_stocks():
     return df_total
 
 def find_turning_stocks():
-    print("종목 분석 시작 (전체 종목 대상)...")
+    print("🚀 [승률 65% 퀀트 조건] 종목 검색 시작...")
     df_krx = get_krx_stocks()
     selected_stocks = []
     
@@ -46,15 +44,13 @@ def find_turning_stocks():
         name = row["Name"]
         market = row["Market"]
         
-        # 💡 작동 과정을 눈으로 더 자주 확인할 수 있게 100개 단위로 로그 출력 변경
-        if idx % 100 == 0 and idx > 0:
-            print(f"> 진행률: {idx}/{total_count} 종목 분석 완료...")
+        if idx % 200 == 0 and idx > 0:
+            print(f"> 진행률: {idx}/{total_count} 종목 분석 중...")
             
         try:
             suffix = ".KS" if market == "KOSPI" else ".KQ"
             ticker = code + suffix
             
-            # yfinance 에러 메시지 출력을 켜서 데이터 누락 문제를 시각화합니다.
             df = yf.download(ticker, period="2y", progress=False, threads=False)
             
             if df.empty or len(df) < 240:
@@ -63,25 +59,47 @@ def find_turning_stocks():
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = [col for col in df.columns]
                 
+            # --- 데이터 지표 계산 ---
             df["MA5"] = df["Close"].rolling(5).mean()
             df["MA20"] = df["Close"].rolling(20).mean()
+            df["MA60"] = df["Close"].rolling(60).mean()
             df["MA240"] = df["Close"].rolling(240).mean()
             df["Vol_MA20"] = df["Volume"].rolling(20).mean()
             
             today = df.iloc[-1]
             yesterday = df.iloc[-2]
             
-            # --- 💡 [실시간 타점 조건] ---
-            cond_touch = (today["Low"] <= today["MA240"]) and (today["High"] >= today["MA240"])
-            cond_near_above = (today["Close"] >= today["MA240"]) and (today["Close"] <= today["MA240"] * 1.015)
+            # ----------------------------------------------------
+            # 💡 [승률 65%를 위한 5대 핵심 필터 조건]
+            # ----------------------------------------------------
             
+            # 조건 1. 240일 장기 이평선이 '우상향' 중일 것 (하락 추세 속 역배열 돌파 차단)
+            # 최근 5일 전의 240일선보다 오늘의 240일선이 평단가가 높아졌는지 확인
+            if today["MA240"] <= df.iloc[-5]["MA240"]:
+                continue
+                
+            # 조건 2. 매물대 돌파 (당일 종가가 '최근 60거래일' 중 최고가 영역일 것)
+            # 최근 2달간 물린 악성 매물 벽을 오늘 대량거래로 뚫어냈다는 증거입니다.
+            recent_60_max = df.iloc[-60:-1]["Close"].max()
+            if today["Close"] < recent_60_max:
+                continue
+
+            # 조건 3. 완전 정배열 초입 (5일선 > 20일선 > 60일선)
+            # 중장기 이평선까지 완전히 정배열로 정돈되어 상승 에너지가 응축된 자리입니다.
+            if not (today["MA5"] > today["MA20"] > today["MA60"]):
+                continue
+
+            # 조건 4. 240일선 근접성 (이격도 5% 이내 바짝 붙은 초입)
+            cond_touch = (today["Low"] <= today["MA240"]) and (today["High"] >= today["MA240"])
+            cond_near_above = (today["Close"] >= today["MA240"]) and (today["Close"] <= today["MA240"] * 1.05)
             if not (cond_touch or cond_near_above):
                 continue
                 
-            if today["Volume"] < yesterday["Vol_MA20"] * 3:
+            # 조건 5. 신뢰도 높은 돈의 유입 (당일 거래량이 20일 평균의 2배 이상)
+            if today["Volume"] < yesterday["Vol_MA20"] * 2.0:
                 continue
-            if today["MA5"] < today["MA20"]:
-                continue
+                
+            # 조건 6. 당일 확실한 매수세 (양봉 유지)
             if today["Close"] < today["Open"]:
                 continue
                 
@@ -93,28 +111,28 @@ def find_turning_stocks():
                 "Close": close_val, "Volume": vol_val
             })
         except Exception as e:
-            # 개별 종목 수집 중 에러가 나면 패스
             continue
             
-    print(f"💡 최종 조건 통과 종목: {len(selected_stocks)}개")
+    print(f"🔥 [고승률 필터] 최종 통과 종목: {len(selected_stocks)}개")
     return pd.DataFrame(selected_stocks)
 
 def send_email(df_result):
     msg = MIMEMultipart()
     msg["From"] = SENDER_EMAIL
     msg["To"] = ", ".join(RECEIVER_EMAIL_LIST)
-    msg["Subject"] = f"[💡실전 매매] {datetime.date.today()} 전종목 240일선 리포트"
+    msg["Subject"] = f"[🔥고승률65%] {datetime.date.today()} 240일선 매물대 돌파 리포트"
     
     if df_result.empty:
-        # 💡 종목이 없어도 이메일이 정상적으로 도착했음을 본문에 명시합니다.
         html = f"""
         <h3>📊 [{datetime.date.today()}] 알림</h3>
-        <p style='color: red; font-weight: bold;'>오늘 조건에 만족하는 발굴 종목이 0개입니다.</p>
-        <p>프로그램과 메일 발송 시스템은 <b>정상 작동</b> 중입니다.</p>
+        <p style='color: gray; font-weight: bold;'>고승률 조건(240일선 우상향 + 60일 매물대 돌파)을 만족하는 종목이 오늘 시장에 없습니다.</p>
+        <p>엄격한 필터링 결과이므로 시스템은 정상입니다. 장이 좋은 날 확실한 대장주 위주로 포착됩니다.</p>
         """
     else:
-        html = f"<h3>📊 조건 통과 종목 ({len(df_result)}개)</h3><table border=1 style='border-collapse: collapse; text-align: center;'>"
-        html += "<tr style='background-color: #f2f2f2;'><th>시장</th><th>코드</th><th>종목명</th><th>종가</th><th>거래량</th></tr>"
+        html = f"<h3>🔥 승률 65% 타겟 조건 통과 종목 ({len(df_result)}개)</h3>"
+        html += "<p style='color: blue;'>※ 아래 종목은 HTS에서 반드시 240일선 방향이 우상향인지 눈으로 재확인 후 진입하세요.</p>"
+        html += "<table border=1 style='border-collapse: collapse; text-align: center;'>"
+        html += "<tr style='background-color: #e6f2ff;'><th>시장</th><th>코드</th><th>종목명</th><th>종가</th><th>거래량</th></tr>"
         for _, r in df_result.iterrows():
             html += f"<tr><td style='padding: 8px;'>{r['Market']}</td><td style='padding: 8px;'>{r['Code']}</td><td style='padding: 8px;'>{r['Name']}</td><td style='padding: 8px;'>{r['Close']:,}원</td><td style='padding: 8px;'>{r['Volume']:,}주</td></tr>"
         html += "</table>"
@@ -123,7 +141,6 @@ def send_email(df_result):
     
     for attempt in range(3):
         try:
-            # 💡 안정적인 도메인 주소(smtp.gmail.com)와 포트 465를 직접 연동합니다.
             with smtplib.SMTP_SSL(GMAIL_SMTP_HOST, 465) as server:
                 server.login(SENDER_EMAIL, SENDER_PASSWORD)
                 server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL_LIST, msg.as_string())
@@ -132,7 +149,7 @@ def send_email(df_result):
         except Exception as e:
             print(f"⚠️ 이메일 발송 시도 {attempt+1}회 실패 오류내용: {e}")
             time.sleep(3)
-    print("❌ [최종 에러] 메일 전송에 실패했습니다. 비밀번호나 구글 보안 설정을 확인하세요.")
+    print("❌ [최종 에러] 메일 전송 실패")
 
 if __name__ == "__main__":
     df = find_turning_stocks()

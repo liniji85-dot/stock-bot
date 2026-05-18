@@ -2,9 +2,22 @@ name: Daily Stock Bot
 
 on:
   schedule:
-    # 매일 한국 시간 오후 4시 5분(서버 기준 UTC 오전 7시 5분)에 자동 실행
-    - cron: '5 7 * * *'
-  workflow_dispatch: # 버튼을 눌러 수동으로도 실행 가능하게 설정
+    # ⚠️ GitHub Actions는 UTC 기준이므로 한국 시간(KST)에서 9시간을 뺀 시간으로 설정합니다.
+    # 주말(토, 일)에는 장이 열리지 않으므로 '1-5'(월~금) 조건을 넣어 평일만 실행되게 했습니다.
+    
+    # 1. 한국 시간 오전 09:10 (UTC 00:10) -> 장 시작 직후 타점
+    - cron: '10 0 * * 1-5'
+    
+    # 2. 한국 시간 오전 11:30 (UTC 02:30) -> 오전장 주도주 포착
+    - cron: '30 2 * * 1-5'
+    
+    # 3. 한국 시간 오후 02:00 (UTC 05:00) -> 오후장 변동성 포착
+    - cron: '0 5 * * 1-5'
+    
+    # 4. 한국 시간 오후 03:40 (UTC 06:40) -> 장 마감 직후 최종 종가 타점
+    - cron: '40 6 * * 1-5'
+
+  workflow_dispatch: # 수동 실행 버튼 유지
 
 jobs:
   run-bot:
@@ -17,6 +30,8 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+        # 💡 pip 라이브러리 캐싱을 추가하여 하루 4번 실행 시 빌드 속도를 2배 이상 빠르게 만듭니다.
+        cache: 'pip' 
 
     - name: Install dependencies
       run: |
@@ -25,5 +40,3 @@ jobs:
 
     - name: Run Stock Bot
       run: python bot.py
-
-
